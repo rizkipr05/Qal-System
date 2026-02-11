@@ -17,6 +17,7 @@ class DocumentModel extends Model
         'owner_id',
         'reviewer_id',
         'approver_id',
+        'owner_approval_id',
         'current_version_id',
         'locked_at',
         'approved_by',

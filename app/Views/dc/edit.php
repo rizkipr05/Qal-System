@@ -18,11 +18,11 @@
                 <input class="form-control" name="category" value="<?= esc($document['category']) ?>">
             </div>
             <div class="col-md-6">
-                <label class="form-label">Reviewer</label>
+                <label class="form-label">Quality Control (QC)</label>
                 <select class="form-select" name="reviewer_id">
-                    <option value="">- Pilih Reviewer -</option>
+                    <option value="">- Pilih QC -</option>
                     <?php foreach ($users as $u): ?>
-                        <?php if ($u['role'] === 'reviewer' || $u['role'] === 'admin'): ?>
+                        <?php if (in_array($u['role'], ['qc', 'reviewer', 'admin'], true)): ?>
                             <option value="<?= $u['id'] ?>" <?= $document['reviewer_id'] == $u['id'] ? 'selected' : '' ?>>
                                 <?= esc($u['name']) ?> (<?= esc($u['role']) ?>)
                             </option>
@@ -31,12 +31,25 @@
                 </select>
             </div>
             <div class="col-md-6">
-                <label class="form-label">Approver</label>
+                <label class="form-label">Project Control (PC)</label>
                 <select class="form-select" name="approver_id">
-                    <option value="">- Pilih Approver -</option>
+                    <option value="">- Pilih PC -</option>
                     <?php foreach ($users as $u): ?>
-                        <?php if ($u['role'] === 'approver' || $u['role'] === 'admin'): ?>
+                        <?php if (in_array($u['role'], ['pc', 'approver', 'admin'], true)): ?>
                             <option value="<?= $u['id'] ?>" <?= $document['approver_id'] == $u['id'] ? 'selected' : '' ?>>
+                                <?= esc($u['name']) ?> (<?= esc($u['role']) ?>)
+                            </option>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Owner Approval</label>
+                <select class="form-select" name="owner_approval_id">
+                    <option value="">- Pilih Owner -</option>
+                    <?php foreach ($users as $u): ?>
+                        <?php if (in_array($u['role'], ['owner', 'admin'], true)): ?>
+                            <option value="<?= $u['id'] ?>" <?= $document['owner_approval_id'] == $u['id'] ? 'selected' : '' ?>>
                                 <?= esc($u['name']) ?> (<?= esc($u['role']) ?>)
                             </option>
                         <?php endif; ?>

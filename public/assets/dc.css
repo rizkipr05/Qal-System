@@ -151,6 +151,7 @@ body {
 .dc-badge.draft { background: #fde68a; color: #92400e; }
 .dc-badge.submitted { background: #bfdbfe; color: #1e3a8a; }
 .dc-badge.reviewed { background: #bbf7d0; color: #166534; }
+.dc-badge.pc_signed { background: #ddd6fe; color: #4c1d95; }
 .dc-badge.revision_requested { background: #fecaca; color: #991b1b; }
 .dc-badge.archived { background: #e5e7eb; color: #374151; }
 

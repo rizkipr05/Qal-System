@@ -17,6 +17,7 @@ class Documents extends BaseController
     private DocumentVersionModel $versions;
     private DocumentReviewModel $reviews;
     private UserModel $users;
+    private ?bool $hasVersionFileNameColumn = null;
 
     public function __construct()
     {
@@ -32,18 +33,21 @@ class Documents extends BaseController
         $statusFilter = $this->request->getGet('status');
 
         $query = $this->documents
-            ->select('documents.*, u.name as owner_name, r.name as reviewer_name, a.name as approver_name')
+            ->select('documents.*, u.name as owner_name, r.name as reviewer_name, a.name as approver_name, oa.name as owner_approval_name')
             ->join('users u', 'u.id = documents.owner_id')
             ->join('users r', 'r.id = documents.reviewer_id', 'left')
             ->join('users a', 'a.id = documents.approver_id', 'left')
+            ->join('users oa', 'oa.id = documents.owner_approval_id', 'left')
             ->orderBy('documents.created_at', 'DESC');
 
-        if ($currentUser['role'] === 'drafter') {
+        if ($this->hasRole($currentUser, 'construction')) {
             $query->where('documents.owner_id', $currentUser['id']);
-        } elseif ($currentUser['role'] === 'reviewer') {
+        } elseif ($this->hasRole($currentUser, 'qc')) {
             $query->where('documents.reviewer_id', $currentUser['id']);
-        } elseif ($currentUser['role'] === 'approver') {
+        } elseif ($this->hasRole($currentUser, 'pc')) {
             $query->where('documents.approver_id', $currentUser['id']);
+        } elseif ($this->hasRole($currentUser, 'owner')) {
+            $query->where('documents.owner_approval_id', $currentUser['id']);
         }
 
         if ($statusFilter) {
@@ -56,12 +60,14 @@ class Documents extends BaseController
             ->select('status, COUNT(*) as total')
             ->groupBy('status');
 
-        if ($currentUser['role'] === 'drafter') {
+        if ($this->hasRole($currentUser, 'construction')) {
             $statusCountsRaw->where('owner_id', $currentUser['id']);
-        } elseif ($currentUser['role'] === 'reviewer') {
+        } elseif ($this->hasRole($currentUser, 'qc')) {
             $statusCountsRaw->where('reviewer_id', $currentUser['id']);
-        } elseif ($currentUser['role'] === 'approver') {
+        } elseif ($this->hasRole($currentUser, 'pc')) {
             $statusCountsRaw->where('approver_id', $currentUser['id']);
+        } elseif ($this->hasRole($currentUser, 'owner')) {
+            $statusCountsRaw->where('owner_approval_id', $currentUser['id']);
         }
 
         $statusCountsRaw = $statusCountsRaw->findAll();
@@ -74,6 +80,7 @@ class Documents extends BaseController
             'draft' => 0,
             'submitted' => 0,
             'reviewed' => 0,
+            'pc_signed' => 0,
             'revision_requested' => 0,
             'archived' => 0,
         ];
@@ -102,6 +109,7 @@ class Documents extends BaseController
         $owner = $this->users->find($doc['owner_id']);
         $reviewer = $doc['reviewer_id'] ? $this->users->find($doc['reviewer_id']) : null;
         $approver = $doc['approver_id'] ? $this->users->find($doc['approver_id']) : null;
+        $ownerApproval = $doc['owner_approval_id'] ? $this->users->find($doc['owner_approval_id']) : null;
 
         $versions = $this->versions->where('document_id', $id)->orderBy('revision', 'DESC')->findAll();
         $reviews = $this->reviews
@@ -118,6 +126,7 @@ class Documents extends BaseController
             'owner'       => $owner,
             'reviewer'    => $reviewer,
             'approver'    => $approver,
+            'ownerApproval' => $ownerApproval,
             'versions'    => $versions,
             'reviews'     => $reviews,
         ]);
@@ -134,6 +143,7 @@ class Documents extends BaseController
         $owner = $this->users->find($doc['owner_id']);
         $reviewer = $doc['reviewer_id'] ? $this->users->find($doc['reviewer_id']) : null;
         $approver = $doc['approver_id'] ? $this->users->find($doc['approver_id']) : null;
+        $ownerApproval = $doc['owner_approval_id'] ? $this->users->find($doc['owner_approval_id']) : null;
         $versions = $this->versions->where('document_id', $id)->orderBy('revision', 'DESC')->findAll();
 
         return view('dc/print', [
@@ -142,6 +152,7 @@ class Documents extends BaseController
             'owner'       => $owner,
             'reviewer'    => $reviewer,
             'approver'    => $approver,
+            'ownerApproval' => $ownerApproval,
             'versions'    => $versions,
         ]);
     }
@@ -149,15 +160,62 @@ class Documents extends BaseController
     public function create()
     {
         $currentUser = $this->currentUser();
+        if (!$this->canCreateQal($currentUser)) {
+            return redirect()->to(site_url('dc'))->with('error', 'Hanya Construction atau Admin yang bisa membuat QAL.');
+        }
+
         return view('dc/create', [
             'currentUser' => $currentUser,
             'users'       => $this->users->findAll(),
         ]);
     }
 
+    public function profile()
+    {
+        $currentUser = $this->currentUser();
+
+        return view('dc/profile', [
+            'currentUser' => $currentUser,
+        ]);
+    }
+
+    public function updateProfile(): RedirectResponse
+    {
+        $currentUser = $this->currentUser();
+        $name = trim((string) $this->request->getPost('name'));
+        $email = trim((string) $this->request->getPost('email'));
+        $newPassword = (string) $this->request->getPost('password');
+
+        if ($name === '' || $email === '') {
+            return redirect()->back()->withInput()->with('error', 'Nama dan email wajib diisi.');
+        }
+
+        $existing = $this->users->where('email', $email)->where('id !=', $currentUser['id'])->first();
+        if ($existing) {
+            return redirect()->back()->withInput()->with('error', 'Email sudah digunakan.');
+        }
+
+        $data = [
+            'name' => $name,
+            'email' => $email,
+        ];
+
+        if ($newPassword !== '') {
+            $data['password'] = password_hash($newPassword, PASSWORD_BCRYPT);
+        }
+
+        $this->users->update($currentUser['id'], $data);
+        $this->logActivity($currentUser['id'], 'update_profile', ['user_id' => $currentUser['id']]);
+
+        return redirect()->to(site_url('dc/profile'))->with('success', 'Profil berhasil diperbarui.');
+    }
+
     public function store(): RedirectResponse
     {
         $currentUser = $this->currentUser();
+        if (!$this->canCreateQal($currentUser)) {
+            return redirect()->to(site_url('dc'))->with('error', 'Hanya Construction atau Admin yang bisa membuat QAL.');
+        }
 
         $data = [
             'title'       => $this->request->getPost('title'),
@@ -167,24 +225,48 @@ class Documents extends BaseController
             'owner_id'    => $currentUser['id'],
             'reviewer_id' => $this->request->getPost('reviewer_id') ?: null,
             'approver_id' => $this->request->getPost('approver_id') ?: null,
+            'owner_approval_id' => $this->request->getPost('owner_approval_id') ?: null,
             'status'      => 'draft',
         ];
 
         $docId = $this->documents->insert($data, true);
 
-        $file = $this->request->getFile('file');
-        if ($file && $file->isValid() && !$file->hasMoved()) {
-            $path = $this->storeUpload($file, $docId);
-            $versionId = $this->versions->insert([
-                'document_id' => $docId,
-                'revision'    => 1,
-                'file_path'   => $path,
-                'notes'       => 'Draft awal',
-                'created_by'  => $currentUser['id'],
-                'created_at'  => date('Y-m-d H:i:s'),
-            ], true);
+        $files = $this->request->getFileMultiple('files');
+        if (empty($files)) {
+            $single = $this->request->getFile('file');
+            if ($single && $single->isValid()) {
+                $files = [$single];
+            }
+        }
 
-            $this->documents->update($docId, ['current_version_id' => $versionId]);
+        if (!empty($files)) {
+            $revision = 1;
+            $lastVersionId = null;
+            foreach ($files as $file) {
+                if (!$file || !$file->isValid() || $file->hasMoved()) {
+                    continue;
+                }
+
+                $path = $this->storeUpload($file, $docId);
+                $versionData = [
+                    'document_id' => $docId,
+                    'revision'    => $revision,
+                    'file_path'   => $path,
+                    'notes'       => 'Draft awal',
+                    'created_by'  => $currentUser['id'],
+                    'created_at'  => date('Y-m-d H:i:s'),
+                ];
+                if ($this->supportsVersionFileName()) {
+                    $versionData['file_name'] = $file->getClientName();
+                }
+
+                $lastVersionId = $this->versions->insert($versionData, true);
+                $revision++;
+            }
+
+            if ($lastVersionId) {
+                $this->documents->update($docId, ['current_version_id' => $lastVersionId]);
+            }
         }
 
         $this->logActivity($currentUser['id'], 'create_qal', ['document_id' => $docId]);
@@ -230,6 +312,7 @@ class Documents extends BaseController
             'description' => $this->request->getPost('description'),
             'reviewer_id' => $this->request->getPost('reviewer_id') ?: null,
             'approver_id' => $this->request->getPost('approver_id') ?: null,
+            'owner_approval_id' => $this->request->getPost('owner_approval_id') ?: null,
         ];
 
         $this->documents->update($id, $data);
@@ -251,7 +334,18 @@ class Documents extends BaseController
             return redirect()->to(site_url('dc/' . $id))->with('error', 'Dokumen tidak bisa dihapus.');
         }
 
+        $db = db_connect();
+        $db->transStart();
+
+        $this->versions->where('document_id', $id)->delete();
+        $this->reviews->where('document_id', $id)->delete();
         $this->documents->delete($id);
+
+        $db->transComplete();
+        if (!$db->transStatus()) {
+            return redirect()->to(site_url('dc/' . $id))->with('error', 'Gagal menghapus dokumen karena relasi data.');
+        }
+
         $this->logActivity($currentUser['id'], 'delete_qal', ['document_id' => $id]);
 
         return redirect()->to(site_url('dc'))->with('success', 'Dokumen berhasil dihapus.');
@@ -273,7 +367,7 @@ class Documents extends BaseController
 
         $this->logActivity($currentUser['id'], 'submit_qal', ['document_id' => $id]);
 
-        return redirect()->to(site_url('dc/' . $id))->with('success', 'Dokumen berhasil disubmit ke reviewer.');
+        return redirect()->to(site_url('dc/' . $id))->with('success', 'Dokumen pendukung berhasil diserahkan ke Quality Control.');
     }
 
     public function uploadRevision(int $id): RedirectResponse
@@ -288,23 +382,46 @@ class Documents extends BaseController
             return redirect()->to(site_url('dc/' . $id))->with('error', 'Anda tidak bisa upload revisi.');
         }
 
-        $file = $this->request->getFile('file');
-        if (!$file || !$file->isValid()) {
-            return redirect()->to(site_url('dc/' . $id))->with('error', 'File revisi wajib diupload.');
+        $files = $this->request->getFileMultiple('files');
+        if (empty($files)) {
+            $single = $this->request->getFile('file');
+            if ($single && $single->isValid()) {
+                $files = [$single];
+            }
+        }
+        if (empty($files)) {
+            return redirect()->to(site_url('dc/' . $id))->with('error', 'Minimal satu file revisi wajib diupload.');
         }
 
         $latest = $this->versions->where('document_id', $id)->orderBy('revision', 'DESC')->first();
         $nextRevision = $latest ? ((int) $latest['revision'] + 1) : 1;
 
-        $path = $this->storeUpload($file, $id);
-        $versionId = $this->versions->insert([
-            'document_id' => $id,
-            'revision'    => $nextRevision,
-            'file_path'   => $path,
-            'notes'       => $this->request->getPost('notes'),
-            'created_by'  => $currentUser['id'],
-            'created_at'  => date('Y-m-d H:i:s'),
-        ], true);
+        $versionId = null;
+        foreach ($files as $file) {
+            if (!$file || !$file->isValid() || $file->hasMoved()) {
+                continue;
+            }
+
+            $path = $this->storeUpload($file, $id);
+            $versionData = [
+                'document_id' => $id,
+                'revision'    => $nextRevision,
+                'file_path'   => $path,
+                'notes'       => $this->request->getPost('notes'),
+                'created_by'  => $currentUser['id'],
+                'created_at'  => date('Y-m-d H:i:s'),
+            ];
+            if ($this->supportsVersionFileName()) {
+                $versionData['file_name'] = $file->getClientName();
+            }
+
+            $versionId = $this->versions->insert($versionData, true);
+            $nextRevision++;
+        }
+
+        if (!$versionId) {
+            return redirect()->to(site_url('dc/' . $id))->with('error', 'Tidak ada file valid yang berhasil diupload.');
+        }
 
         $this->documents->update($id, [
             'current_version_id' => $versionId,
@@ -313,7 +430,7 @@ class Documents extends BaseController
 
         $this->logActivity($currentUser['id'], 'upload_revision', ['document_id' => $id, 'revision' => $nextRevision]);
 
-        return redirect()->to(site_url('dc/' . $id))->with('success', 'Revisi berhasil diupload dan dikirim ulang.');
+        return redirect()->to(site_url('dc/' . $id))->with('success', 'File revisi berhasil diupload dan dikirim ulang.');
     }
 
     public function review(int $id): RedirectResponse
@@ -325,7 +442,7 @@ class Documents extends BaseController
         }
 
         if (!$this->canReview($doc, $currentUser)) {
-            return redirect()->to(site_url('dc/' . $id))->with('error', 'Anda tidak punya akses reviewer.');
+            return redirect()->to(site_url('dc/' . $id))->with('error', 'Anda tidak punya akses Quality Control.');
         }
 
         $action = $this->request->getPost('action');
@@ -347,7 +464,9 @@ class Documents extends BaseController
 
         $this->documents->update($id, ['status' => $docStatus]);
 
-        $message = $action === 'approve' ? 'Review disetujui. Menunggu approval.' : 'Revisi diminta ke drafter.';
+        $message = $action === 'approve'
+            ? 'QC selesai review. Dokumen diteruskan ke Project Control untuk penandatanganan.'
+            : 'Revisi diminta ke Construction.';
         $this->logActivity($currentUser['id'], 'review_qal', ['document_id' => $id, 'action' => $action]);
 
         return redirect()->to(site_url('dc/' . $id))->with('success', $message);
@@ -362,7 +481,28 @@ class Documents extends BaseController
         }
 
         if (!$this->canApprove($doc, $currentUser)) {
-            return redirect()->to(site_url('dc/' . $id))->with('error', 'Anda tidak punya akses approver.');
+            return redirect()->to(site_url('dc/' . $id))->with('error', 'Anda tidak punya akses Project Control.');
+        }
+
+        $this->documents->update($id, [
+            'status' => 'pc_signed',
+        ]);
+
+        $this->logActivity($currentUser['id'], 'pc_sign_qal', ['document_id' => $id]);
+
+        return redirect()->to(site_url('dc/' . $id))->with('success', 'PC sudah menandatangani dokumen. QAL diteruskan ke Owner untuk approval.');
+    }
+
+    public function ownerApprove(int $id): RedirectResponse
+    {
+        $currentUser = $this->currentUser();
+        $doc = $this->documents->find($id);
+        if (!$doc) {
+            return redirect()->to(site_url('dc'))->with('error', 'Dokumen tidak ditemukan.');
+        }
+
+        if (!$this->canOwnerApprove($doc, $currentUser)) {
+            return redirect()->to(site_url('dc/' . $id))->with('error', 'Anda tidak punya akses Owner.');
         }
 
         $this->documents->update($id, [
@@ -372,9 +512,9 @@ class Documents extends BaseController
             'approved_at' => date('Y-m-d H:i:s'),
         ]);
 
-        $this->logActivity($currentUser['id'], 'approve_qal', ['document_id' => $id]);
+        $this->logActivity($currentUser['id'], 'owner_approve_qal', ['document_id' => $id]);
 
-        return redirect()->to(site_url('dc/' . $id))->with('success', 'QAL final disetujui dan dikunci (arsip).');
+        return redirect()->to(site_url('dc/' . $id))->with('success', 'Owner sudah approve. QAL dikembalikan ke QC dan disimpan sebagai arsip proyek.');
     }
 
     public function downloadVersion(int $id)
@@ -418,7 +558,7 @@ class Documents extends BaseController
             return false;
         }
 
-        if ($user['role'] === 'admin') {
+        if ($this->hasRole($user, 'admin')) {
             return true;
         }
 
@@ -427,7 +567,7 @@ class Documents extends BaseController
 
     private function canDelete(array $doc, array $user): bool
     {
-        if ($user['role'] === 'admin') {
+        if ($this->hasRole($user, 'admin')) {
             return true;
         }
 
@@ -436,7 +576,7 @@ class Documents extends BaseController
 
     private function canSubmit(array $doc, array $user): bool
     {
-        if ($user['role'] === 'admin') {
+        if ($this->hasRole($user, 'admin')) {
             return true;
         }
 
@@ -445,29 +585,40 @@ class Documents extends BaseController
 
     private function canUploadRevision(array $doc, array $user): bool
     {
-        if ($user['role'] === 'admin') {
+        if ($this->hasRole($user, 'admin')) {
             return true;
         }
 
-        return $doc['owner_id'] === $user['id'] && $doc['status'] === 'revision_requested';
+        return $doc['owner_id'] === $user['id'] && in_array($doc['status'], ['draft', 'revision_requested'], true);
     }
 
     private function canReview(array $doc, array $user): bool
     {
-        if ($user['role'] === 'admin') {
+        if ($this->hasRole($user, 'admin')) {
             return true;
         }
 
-        return $user['role'] === 'reviewer' && $doc['reviewer_id'] === $user['id'] && in_array($doc['status'], ['submitted'], true);
+        return $this->hasRole($user, 'qc') && $doc['reviewer_id'] === $user['id'] && in_array($doc['status'], ['submitted'], true);
     }
 
     private function canApprove(array $doc, array $user): bool
     {
-        if ($user['role'] === 'admin') {
+        if ($this->hasRole($user, 'admin')) {
             return true;
         }
 
-        return $user['role'] === 'approver' && $doc['approver_id'] === $user['id'] && $doc['status'] === 'reviewed';
+        return $this->hasRole($user, 'pc') && $doc['approver_id'] === $user['id'] && $doc['status'] === 'reviewed';
+    }
+
+    private function canOwnerApprove(array $doc, array $user): bool
+    {
+        if ($this->hasRole($user, 'admin')) {
+            return true;
+        }
+
+        return $this->hasRole($user, 'owner')
+            && $doc['owner_approval_id'] === $user['id']
+            && $doc['status'] === 'pc_signed';
     }
 
     private function storeUpload($file, int $docId): string
@@ -481,5 +632,35 @@ class Documents extends BaseController
         $file->move($uploadDir, $newName);
 
         return 'uploads/qal/' . $docId . '/' . $newName;
+    }
+
+    private function canCreateQal(array $user): bool
+    {
+        return $this->hasRole($user, 'admin') || $this->hasRole($user, 'construction');
+    }
+
+    private function hasRole(array $user, string $expected): bool
+    {
+        return $this->normalizeRole((string) ($user['role'] ?? '')) === $expected;
+    }
+
+    private function normalizeRole(string $role): string
+    {
+        return match ($role) {
+            'drafter' => 'construction',
+            'reviewer' => 'qc',
+            'approver' => 'pc',
+            default => $role,
+        };
+    }
+
+    private function supportsVersionFileName(): bool
+    {
+        if ($this->hasVersionFileNameColumn !== null) {
+            return $this->hasVersionFileNameColumn;
+        }
+
+        $this->hasVersionFileNameColumn = db_connect()->fieldExists('file_name', 'document_versions');
+        return $this->hasVersionFileNameColumn;
     }
 }

@@ -10,28 +10,28 @@ class DcSeeder extends Seeder
     {
         $users = [
             [
-                'name'  => 'Drafter User',
-                'email' => 'drafter@example.com',
-                'password' => password_hash('drafter123', PASSWORD_BCRYPT),
-                'role'  => 'drafter',
+                'name'  => 'Construction User',
+                'email' => 'construction@example.com',
+                'password' => password_hash('construction', PASSWORD_BCRYPT),
+                'role'  => 'construction',
             ],
             [
-                'name'  => 'Reviewer User',
-                'email' => 'reviewer@example.com',
-                'password' => password_hash('reviewer123', PASSWORD_BCRYPT),
-                'role'  => 'reviewer',
+                'name'  => 'QC User',
+                'email' => 'qc@example.com',
+                'password' => password_hash('qc', PASSWORD_BCRYPT),
+                'role'  => 'qc',
             ],
             [
-                'name'  => 'Approver User',
-                'email' => 'approver@example.com',
-                'password' => password_hash('approver123', PASSWORD_BCRYPT),
-                'role'  => 'approver',
+                'name'  => 'PC User',
+                'email' => 'pc@example.com',
+                'password' => password_hash('pc', PASSWORD_BCRYPT),
+                'role'  => 'pc',
             ],
             [
-                'name'  => 'Admin User',
-                'email' => 'admin@example.com',
-                'password' => password_hash('admin123', PASSWORD_BCRYPT),
-                'role'  => 'admin',
+                'name'  => 'Owner User',
+                'email' => 'owner@example.com',
+                'password' => password_hash('owner', PASSWORD_BCRYPT),
+                'role'  => 'owner',
             ],
         ];
 

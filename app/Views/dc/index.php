@@ -1,37 +1,67 @@
 <?= $this->extend('layouts/dc') ?>
 
 <?= $this->section('content') ?>
+<?php
+$roleMap = [
+    'drafter' => 'construction',
+    'reviewer' => 'qc',
+    'approver' => 'pc',
+];
+$normalizedRole = $roleMap[$currentUser['role']] ?? $currentUser['role'];
+
+$statusCards = match ($normalizedRole) {
+    'construction' => [
+        ['label' => 'Draft', 'key' => 'draft'],
+        ['label' => 'Revision Requested', 'key' => 'revision_requested'],
+        ['label' => 'Submitted ke QC', 'key' => 'submitted'],
+    ],
+    'qc' => [
+        ['label' => 'Menunggu Review QC', 'key' => 'submitted'],
+        ['label' => 'Selesai QC', 'key' => 'reviewed'],
+        ['label' => 'Archived (QC)', 'key' => 'archived'],
+    ],
+    'pc' => [
+        ['label' => 'Menunggu TTD PC', 'key' => 'reviewed'],
+        ['label' => 'Sudah TTD PC', 'key' => 'pc_signed'],
+    ],
+    'owner' => [
+        ['label' => 'Menunggu Approval Owner', 'key' => 'pc_signed'],
+        ['label' => 'Approved & Archived', 'key' => 'archived'],
+    ],
+    default => [
+        ['label' => 'Draft', 'key' => 'draft'],
+        ['label' => 'Submitted', 'key' => 'submitted'],
+        ['label' => 'Reviewed', 'key' => 'reviewed'],
+        ['label' => 'PC Signed', 'key' => 'pc_signed'],
+        ['label' => 'Revision Requested', 'key' => 'revision_requested'],
+        ['label' => 'Archived', 'key' => 'archived'],
+    ],
+};
+
+$statusFilterOptions = match ($normalizedRole) {
+    'construction' => ['draft', 'submitted', 'revision_requested', 'archived'],
+    'qc' => ['submitted', 'reviewed', 'revision_requested', 'archived'],
+    'pc' => ['reviewed', 'pc_signed', 'archived'],
+    'owner' => ['pc_signed', 'archived'],
+    default => ['draft', 'submitted', 'reviewed', 'pc_signed', 'revision_requested', 'archived'],
+};
+
+$canCreate = in_array($normalizedRole, ['construction', 'admin'], true);
+
+$showConstruction = in_array($normalizedRole, ['admin', 'qc', 'pc', 'owner'], true);
+$showQc = in_array($normalizedRole, ['admin', 'construction', 'pc', 'owner'], true);
+$showPc = in_array($normalizedRole, ['admin', 'construction', 'qc', 'owner'], true);
+$showOwner = in_array($normalizedRole, ['admin', 'construction', 'qc', 'pc'], true);
+?>
 <div class="row g-3 mb-4">
-    <div class="col-md-2">
-        <div class="dc-card text-center">
-            <div class="text-muted">Draft</div>
-            <div class="h4 mb-0"><?= esc($statusCounts['draft']) ?></div>
+    <?php foreach ($statusCards as $card): ?>
+        <div class="col-md-3">
+            <div class="dc-card text-center">
+                <div class="text-muted"><?= esc($card['label']) ?></div>
+                <div class="h4 mb-0"><?= esc($statusCounts[$card['key']] ?? 0) ?></div>
+            </div>
         </div>
-    </div>
-    <div class="col-md-2">
-        <div class="dc-card text-center">
-            <div class="text-muted">Submitted</div>
-            <div class="h4 mb-0"><?= esc($statusCounts['submitted']) ?></div>
-        </div>
-    </div>
-    <div class="col-md-2">
-        <div class="dc-card text-center">
-            <div class="text-muted">Reviewed</div>
-            <div class="h4 mb-0"><?= esc($statusCounts['reviewed']) ?></div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="dc-card text-center">
-            <div class="text-muted">Revision Requested</div>
-            <div class="h4 mb-0"><?= esc($statusCounts['revision_requested']) ?></div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="dc-card text-center">
-            <div class="text-muted">Archived</div>
-            <div class="h4 mb-0"><?= esc($statusCounts['archived']) ?></div>
-        </div>
-    </div>
+    <?php endforeach; ?>
 </div>
 
 <div class="dc-card">
@@ -41,7 +71,7 @@
             <form class="d-flex gap-2" method="get" action="<?= site_url('dc') ?>">
                 <select class="form-select" name="status">
                     <option value="">Semua Status</option>
-                    <?php foreach (['draft','submitted','reviewed','revision_requested','archived'] as $st): ?>
+                    <?php foreach ($statusFilterOptions as $st): ?>
                         <option value="<?= $st ?>" <?= $statusFilter === $st ? 'selected' : '' ?>>
                             <?= esc(str_replace('_', ' ', strtoupper($st))) ?>
                         </option>
@@ -49,7 +79,9 @@
                 </select>
                 <button class="btn btn-outline-secondary" type="submit">Filter</button>
             </form>
-            <a class="btn btn-success" href="<?= site_url('dc/create') ?>">+ Buat QAL</a>
+            <?php if ($canCreate): ?>
+                <a class="btn btn-success" href="<?= site_url('dc/create') ?>">+ Buat QAL</a>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -64,9 +96,10 @@
                         <th>Judul</th>
                         <th>Doc No</th>
                         <th>Status</th>
-                        <th>Owner</th>
-                        <th>Reviewer</th>
-                        <th>Approver</th>
+                        <?php if ($showConstruction): ?><th>Construction</th><?php endif; ?>
+                        <?php if ($showQc): ?><th>QC</th><?php endif; ?>
+                        <?php if ($showPc): ?><th>PC</th><?php endif; ?>
+                        <?php if ($showOwner): ?><th>Owner</th><?php endif; ?>
                         <th>Aksi</th>
                     </tr>
                 </thead>
@@ -81,13 +114,22 @@
                                     <?= esc(str_replace('_', ' ', strtoupper($doc['status']))) ?>
                                 </span>
                             </td>
-                            <td><?= esc($doc['owner_name']) ?></td>
-                            <td><?= esc($doc['reviewer_name'] ?? '-') ?></td>
-                            <td><?= esc($doc['approver_name'] ?? '-') ?></td>
+                            <?php if ($showConstruction): ?><td><?= esc($doc['owner_name']) ?></td><?php endif; ?>
+                            <?php if ($showQc): ?><td><?= esc($doc['reviewer_name'] ?? '-') ?></td><?php endif; ?>
+                            <?php if ($showPc): ?><td><?= esc($doc['approver_name'] ?? '-') ?></td><?php endif; ?>
+                            <?php if ($showOwner): ?><td><?= esc($doc['owner_approval_name'] ?? '-') ?></td><?php endif; ?>
                             <td>
                                 <div class="dc-actions">
                                     <a class="btn btn-sm btn-outline-primary" href="<?= site_url('dc/' . $doc['id']) ?>">Detail</a>
-                                    <a class="btn btn-sm btn-outline-secondary" href="<?= site_url('dc/' . $doc['id'] . '/edit') ?>">Edit</a>
+                                    <?php if (
+                                        $normalizedRole === 'admin'
+                                        || (
+                                            $normalizedRole === 'construction'
+                                            && in_array($doc['status'], ['draft', 'revision_requested'], true)
+                                        )
+                                    ): ?>
+                                        <a class="btn btn-sm btn-outline-secondary" href="<?= site_url('dc/' . $doc['id'] . '/edit') ?>">Edit</a>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                         </tr>

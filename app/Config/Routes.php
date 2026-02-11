@@ -12,6 +12,8 @@ $routes->get('logout', 'Auth::logout');
 
 $routes->group('dc', function ($routes) {
     $routes->get('/', 'Dc\\Documents::index');
+    $routes->get('profile', 'Dc\\Documents::profile');
+    $routes->post('profile', 'Dc\\Documents::updateProfile');
     $routes->get('create', 'Dc\\Documents::create');
     $routes->post('store', 'Dc\\Documents::store');
     $routes->get('(:num)', 'Dc\\Documents::show/$1');
@@ -23,6 +25,7 @@ $routes->group('dc', function ($routes) {
     $routes->post('(:num)/revision', 'Dc\\Documents::uploadRevision/$1');
     $routes->post('(:num)/review', 'Dc\\Documents::review/$1');
     $routes->post('(:num)/approve', 'Dc\\Documents::approve/$1');
+    $routes->post('(:num)/owner-approve', 'Dc\\Documents::ownerApprove/$1');
     $routes->get('version/(:num)/download', 'Dc\\Documents::downloadVersion/$1');
 });
 

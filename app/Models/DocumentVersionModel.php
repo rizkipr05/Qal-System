@@ -12,6 +12,7 @@ class DocumentVersionModel extends Model
         'document_id',
         'revision',
         'file_path',
+        'file_name',
         'notes',
         'created_by',
         'created_at',

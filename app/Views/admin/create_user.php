@@ -16,10 +16,9 @@
             <div class="col-md-6">
                 <label class="form-label">Role</label>
                 <select class="form-select" name="role" required>
-                    <option value="drafter">Drafter</option>
-                    <option value="reviewer">Reviewer</option>
-                    <option value="approver">Approver</option>
-                    <option value="admin">Admin</option>
+                    <?php foreach (($roleOptions ?? []) as $role => $label): ?>
+                        <option value="<?= esc($role) ?>"><?= esc($label) ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
             <div class="col-md-6">

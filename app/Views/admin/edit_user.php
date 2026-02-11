@@ -16,8 +16,17 @@
             <div class="col-md-6">
                 <label class="form-label">Role</label>
                 <select class="form-select" name="role" required>
-                    <?php foreach (['drafter','reviewer','approver','admin'] as $role): ?>
-                        <option value="<?= $role ?>" <?= $user['role'] === $role ? 'selected' : '' ?>><?= ucfirst($role) ?></option>
+                    <?php
+                    $roleOptions = $roleOptions ?? [];
+                    $legacyRoleMap = [
+                        'drafter' => 'construction',
+                        'reviewer' => 'qc',
+                        'approver' => 'pc',
+                    ];
+                    $selectedRole = $legacyRoleMap[$user['role']] ?? $user['role'];
+                    ?>
+                    <?php foreach ($roleOptions as $role => $label): ?>
+                        <option value="<?= $role ?>" <?= $selectedRole === $role ? 'selected' : '' ?>><?= esc($label) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

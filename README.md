@@ -1,7 +1,7 @@
 # QAL System (CodeIgniter 4)
 
 ## Ringkas
-Aplikasi ini adalah sistem pengelolaan dokumen QAL dengan alur draft, review, dan approval. Peran utama: `drafter`, `reviewer`, `approver`, `admin`.
+Aplikasi ini adalah sistem pengelolaan dokumen QAL dengan alur `Construction -> QC -> PC -> Owner -> Arsip QC`. Peran utama: `construction`, `qc`, `pc`, `owner`, `admin`.
 
 ## Prasyarat
 - PHP 8.2+
@@ -61,6 +61,7 @@ Migrasi berada di `app/Database/Migrations/`.
 - `drafter@example.com` / `drafter123`
 - `reviewer@example.com` / `reviewer123`
 - `approver@example.com` / `approver123`
+- `owner@example.com` / `owner123`
 - `admin@example.com` / `admin123`
 
 ## Catatan Server
